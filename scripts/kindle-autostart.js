@@ -13,6 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 const JOB_NAME = 'kindle-dashboard';
 const REMOTE = {
   loop: '/mnt/us/dash-loop.sh',
+  screensaver: '/mnt/us/dash-screensaver.sh',
   launcher: '/mnt/us/dash-autostart.sh',
   environment: '/mnt/us/dash-autostart.env',
   disabled: '/mnt/us/dash-autostart.disabled',
@@ -36,12 +37,17 @@ function dashboardUrl(value = process.env.DASHBOARD_URL) {
   return url.toString();
 }
 
+function kindleMode(value) {
+  return value === 'screensaver' ? 'screensaver' : 'loop';
+}
+
 function environmentContents(env = process.env) {
   return [
     `PC=${shellQuote(dashboardUrl(env.DASHBOARD_URL))}`,
     `INTERVAL=${shellQuote(positiveInt(env.KINDLE_REFRESH_INTERVAL, 45))}`,
     `FULL_EVERY=${shellQuote(positiveInt(env.KINDLE_FULL_REFRESH_EVERY, 20))}`,
     `WIFI_RETRY_EVERY=${shellQuote(positiveInt(env.KINDLE_WIFI_RETRY_EVERY, 3))}`,
+    `MODE=${shellQuote(kindleMode(env.KINDLE_MODE))}`,
     '',
   ].join('\n');
 }
@@ -73,6 +79,7 @@ async function writeEnvironment(client, env = process.env) {
     'KINDLE_REFRESH_INTERVAL',
     'KINDLE_FULL_REFRESH_EVERY',
     'KINDLE_WIFI_RETRY_EVERY',
+    'KINDLE_MODE',
   ].some((name) => env[name]) ? '1' : '0';
   const command = [
     `if [ ${shellQuote(force)} = '1' ] || [ ! -f ${shellQuote(REMOTE.environment)} ]; then`,
@@ -95,6 +102,7 @@ async function preflight(client) {
 async function install(client, env = process.env) {
   await preflight(client);
   await uploadAtomic(client, path.join(ROOT, 'kindle', 'dash-loop.sh'), REMOTE.loop, '755');
+  await uploadAtomic(client, path.join(ROOT, 'kindle', 'dash-screensaver.sh'), REMOTE.screensaver, '755');
   await uploadAtomic(client, path.join(ROOT, 'kindle', 'dash-autostart.sh'), REMOTE.launcher, '755');
   await uploadAtomic(client, path.join(ROOT, 'kindle', 'kindle-dashboard.conf'), REMOTE.jobSource, '644');
   await writeEnvironment(client, env);
@@ -149,6 +157,9 @@ if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
     rm -f /mnt/us/dash-loop.pid
   fi
 fi
+# kill -9 pula o trap do dash-loop, que e quem devolveria a prop a 0;
+# presa em 1 ela impede o screensaver (e o sleep do aparelho) ate reboot
+lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null || true
 `, 'stop dashboard');
 }
 
@@ -165,9 +176,9 @@ if [ -f ${shellQuote(REMOTE.jobTarget)} ] &&
 fi
 initctl reload-configuration
 rm -f ${shellQuote(REMOTE.launcher)} ${shellQuote(REMOTE.jobSource)} ${shellQuote(REMOTE.disabled)} \
-      ${shellQuote(REMOTE.loop)} ${shellQuote(REMOTE.environment)} \
-      /mnt/us/dash-loop.log /mnt/us/dash-autostart.log \
-      /mnt/us/dash-loop.stop /mnt/us/dash-loop.pid /mnt/us/dash.png
+      ${shellQuote(REMOTE.loop)} ${shellQuote(REMOTE.screensaver)} ${shellQuote(REMOTE.environment)} \
+      /mnt/us/dash-loop.log /mnt/us/dash-screensaver.log /mnt/us/dash-autostart.log \
+      /mnt/us/dash-loop.stop /mnt/us/dash-loop.pid /mnt/us/dash.png /mnt/us/dash.png.tmp
 `, 'uninstall Upstart job');
 }
 
@@ -181,6 +192,8 @@ else
   echo 'Enabled   : n/a'
 fi
 echo "Upstart   : $(initctl status ${JOB_NAME} 2>/dev/null || echo unavailable)"
+MODE=$(sed -n "s/^MODE=['\\"]\\{0,1\\}\\([a-z]*\\).*/\\1/p" ${shellQuote(REMOTE.environment)} 2>/dev/null)
+echo "Mode      : \${MODE:-loop}"
 PID=$(cat /mnt/us/dash-loop.pid 2>/dev/null)
 if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
   echo "Loop      : running (pid $PID)"
@@ -212,6 +225,7 @@ function parseStatus(output) {
     backendReachable: fields.Backend === 'reachable',
     enabled: fields.Enabled === 'yes',
     installed: fields.Autostart === 'installed',
+    mode: fields.Mode === 'screensaver' ? 'screensaver' : 'loop',
     output,
     running: /^running(?:\s|$)/.test(fields.Loop || ''),
   };

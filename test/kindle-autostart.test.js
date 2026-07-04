@@ -28,12 +28,20 @@ test('environmentContents safely quotes the generated Kindle configuration', () 
     KINDLE_REFRESH_INTERVAL: '30',
     KINDLE_FULL_REFRESH_EVERY: '10',
     KINDLE_WIFI_RETRY_EVERY: '4',
+    KINDLE_MODE: 'screensaver',
   });
 
   assert.match(contents, /^PC='http:\/\/dashboard\.local:8787\/dash\.png'$/m);
   assert.match(contents, /^INTERVAL='30'$/m);
   assert.match(contents, /^FULL_EVERY='10'$/m);
   assert.match(contents, /^WIFI_RETRY_EVERY='4'$/m);
+  assert.match(contents, /^MODE='screensaver'$/m);
+});
+
+test('environmentContents falls back to loop mode for missing or unknown modes', () => {
+  const base = { DASHBOARD_URL: 'http://dashboard.local:8787/dash.png' };
+  assert.match(environmentContents(base), /^MODE='loop'$/m);
+  assert.match(environmentContents({ ...base, KINDLE_MODE: 'weird' }), /^MODE='loop'$/m);
 });
 
 test('parseStatus returns public state from Kindle status output', () => {
@@ -41,6 +49,7 @@ test('parseStatus returns public state from Kindle status output', () => {
     'Autostart : installed',
     'Enabled   : yes',
     'Upstart   : kindle-dashboard stop/waiting',
+    'Mode      : screensaver',
     'Loop      : running (pid 123)',
     'Backend   : reachable',
   ].join('\n');
@@ -49,6 +58,7 @@ test('parseStatus returns public state from Kindle status output', () => {
     backendReachable: true,
     enabled: true,
     installed: true,
+    mode: 'screensaver',
     output,
     running: true,
   });
@@ -67,4 +77,5 @@ test('parseStatus reports stopped and unavailable scripts', () => {
   assert.equal(status.enabled, false);
   assert.equal(status.running, false);
   assert.equal(status.backendReachable, false);
+  assert.equal(status.mode, 'loop');
 });

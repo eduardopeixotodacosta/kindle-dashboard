@@ -21,10 +21,15 @@ export interface RenderResult {
   updatedAt: string
 }
 
+// loop: desenha continuamente e segura a tela acesa (aparelho dedicado).
+// screensaver: desenha só com o Kindle bloqueado; leitura fica intacta.
+export type KindleMode = 'loop' | 'screensaver'
+
 export interface DashboardConfig {
   dashboardUrl: string
   kindleFullRefreshEvery: number
   kindleIp: string
+  kindleMode: KindleMode
   kindlePasswordSaved: boolean
   kindlePort: number
   kindleRefreshInterval: number
@@ -40,6 +45,7 @@ export interface DashboardConfigInput {
   dashboardUrl: string
   kindleFullRefreshEvery: number
   kindleIp: string
+  kindleMode: KindleMode
   kindlePassword?: string
   kindlePort: number
   kindleRefreshInterval: number
@@ -82,6 +88,7 @@ export interface KindleScriptStatus {
   backendReachable: boolean
   enabled: boolean
   installed: boolean
+  mode: KindleMode
   output: string
   running: boolean
 }

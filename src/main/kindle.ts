@@ -34,6 +34,7 @@ function kindleEnvironment(config: StoredDashboardConfig): Record<string, string
   return {
     DASHBOARD_URL: config.dashboardUrl,
     KINDLE_FULL_REFRESH_EVERY: String(config.kindleFullRefreshEvery),
+    KINDLE_MODE: config.kindleMode,
     KINDLE_REFRESH_INTERVAL: String(config.kindleRefreshInterval),
     KINDLE_WIFI_RETRY_EVERY: String(config.kindleWifiRetryEvery),
   }

@@ -86,8 +86,9 @@ During **Install scripts**, the app uploads or creates:
 | Kindle path | Purpose |
 | --- | --- |
 | `/mnt/us/dash-loop.sh` | Downloads the PNG from the PC and displays it with FBInk in a loop. |
-| `/mnt/us/dash-autostart.sh` | Waits for Wi-Fi and starts the loop. |
-| `/mnt/us/dash-autostart.env` | Stores the PNG URL and dashboard intervals. |
+| `/mnt/us/dash-screensaver.sh` | Shows the dashboard only while the Kindle is locked (screensaver). |
+| `/mnt/us/dash-autostart.sh` | Waits for Wi-Fi and starts the script selected by `MODE`. |
+| `/mnt/us/dash-autostart.env` | Stores the PNG URL, dashboard intervals, and display mode. |
 | `/mnt/us/kindle-dashboard.conf` | Removable copy of the Upstart job. |
 | `/etc/upstart/kindle-dashboard.conf` | Upstart job that calls the launcher on boot. |
 
@@ -108,6 +109,7 @@ PC='http://<IP_PC>:8787/dash.png'
 INTERVAL='45'
 FULL_EVERY='20'
 WIFI_RETRY_EVERY='3'
+MODE='loop'
 ```
 
 Fields:
@@ -116,6 +118,8 @@ Fields:
 - `INTERVAL`: seconds between downloads.
 - `FULL_EVERY`: how many cycles between full refreshes.
 - `WIFI_RETRY_EVERY`: consecutive failures before Wi-Fi reconnect attempt.
+- `MODE`: `loop` (continuous, screen always on) or `screensaver` (dashboard only
+  while the Kindle is locked).
 
 If `PC` is empty, the loop exits with an error. It does not fall back to an old
 IP address.
@@ -134,10 +138,11 @@ The launcher:
 - does not start if `/mnt/us/dash-autostart.disabled` exists;
 - loads `/mnt/us/dash-autostart.env`;
 - validates that `PC` is configured;
-- waits up to 60 seconds for `/mnt/us/dash-loop.sh`;
+- picks the script from `MODE`: `dash-loop.sh` or `dash-screensaver.sh`;
+- waits up to 60 seconds for the selected script;
 - waits up to 90 seconds for Wi-Fi to become `CONNECTED`;
 - removes `/mnt/us/dash-loop.stop`;
-- starts `dash-loop.sh` in the background;
+- starts the selected script in the background;
 - writes logs to `/mnt/us/dash-autostart.log`.
 
 ## Loop Behavior
@@ -154,6 +159,23 @@ The launcher:
 - uses `/mnt/us/dash-loop.pid` to avoid duplicate instances;
 - stops when `/mnt/us/dash-loop.stop` exists.
 
+## Screensaver Mode Behavior
+
+`dash-screensaver.sh` (used when `MODE='screensaver'`):
+
+- never holds the screen awake; reading stays untouched;
+- watches the power state through `lipc-get-prop com.lab126.powerd`;
+- when the Kindle locks, draws `/mnt/us/dash.png` over the screensaver with
+  FBInk and refreshes it every `INTERVAL` seconds;
+- when the Kindle unlocks, stops drawing; the framework restores the book or
+  menu on its own;
+- after the Kindle suspends, Wi-Fi turns off and the image freezes showing the
+  timestamp of the last render;
+- logs to `/mnt/us/dash-screensaver.log`;
+- reuses `/mnt/us/dash-loop.pid` and `/mnt/us/dash-loop.stop`, so start, stop,
+  and status work the same in both modes and the two scripts never run at the
+  same time.
+
 ## Expected Status
 
 After installation, the UI shows the script's public state:
@@ -163,7 +185,8 @@ After installation, the UI shows the script's public state:
 | Autostart | Upstart job installed or missing |
 | Enabled | autostart enabled or disabled by `.disabled` file |
 | Upstart | state reported by `initctl` |
-| Loop | process running or stopped |
+| Mode | `loop` or `screensaver`, read from the env file |
+| Loop | process running or stopped (either mode) |
 | Backend | PC reachable through `/api/ping` |
 
 If `Backend` is unavailable, check:
@@ -211,12 +234,15 @@ files directly on the Kindle:
 
 ```sh
 rm -f /mnt/us/dash-loop.sh \
+      /mnt/us/dash-screensaver.sh \
       /mnt/us/dash-loop.pid \
       /mnt/us/dash-loop.log \
+      /mnt/us/dash-screensaver.log \
       /mnt/us/dash-loop.stop \
       /mnt/us/dash-autostart.log \
       /mnt/us/dash-autostart.env \
-      /mnt/us/dash.png
+      /mnt/us/dash.png \
+      /mnt/us/dash.png.tmp
 ```
 
 This cleanup removes only Kindle Dashboard files. Do not remove jailbreak,

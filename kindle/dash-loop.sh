@@ -16,9 +16,10 @@ STOP=/mnt/us/dash-loop.stop
 PIDFILE=/mnt/us/dash-loop.pid
 FBINK=/usr/bin/fbink
 
-case "$INTERVAL" in ''|*[!0-9]*) INTERVAL=45;; esac
-case "$FULL_EVERY" in ''|*[!0-9]*|0) FULL_EVERY=20;; esac
-case "$WIFI_RETRY_EVERY" in ''|*[!0-9]*|0) WIFI_RETRY_EVERY=3;; esac
+# 0* rejeita zero e zeros a esquerda ("08" viraria octal invalido no $(( )))
+case "$INTERVAL" in ''|*[!0-9]*|0*) INTERVAL=45;; esac
+case "$FULL_EVERY" in ''|*[!0-9]*|0*) FULL_EVERY=20;; esac
+case "$WIFI_RETRY_EVERY" in ''|*[!0-9]*|0*) WIFI_RETRY_EVERY=3;; esac
 case "$MAX_FAILURES" in ''|*[!0-9]*) MAX_FAILURES=6;; esac
 if [ -z "$PC" ]; then
   echo "[dash-loop] PC is required. Set PC to http://<PC_IP>:<PORT>/dash.png"
@@ -32,11 +33,18 @@ if [ -f "$PIDFILE" ]; then
 fi
 echo $$ > "$PIDFILE"
 
+# so remove os arquivos compartilhados se este processo ainda for o dono:
+# o trap POSIX e adiado ate o comando corrente (sleep/curl) terminar, entao
+# a instancia antiga morre depois que a nova ja escreveu o proprio pid
 cleanup() {
   lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
-  rm -f "$PIDFILE" "$IMG.tmp"
+  if [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ]; then
+    rm -f "$PIDFILE" "$IMG.tmp"
+  fi
 }
-trap cleanup EXIT INT TERM
+# sem exit no handler o script sobreviveria ao kill do takeover
+trap 'cleanup; exit 143' INT TERM
+trap cleanup EXIT
 
 reconnect_wifi() {
   STATE=$(lipc-get-prop com.lab126.wifid cmState 2>/dev/null)

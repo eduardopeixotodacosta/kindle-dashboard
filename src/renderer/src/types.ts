@@ -30,6 +30,7 @@ export interface ConfigForm {
   dashboardUrl: string
   kindleFullRefreshEvery: string
   kindleIp: string
+  kindleMode: string
   kindlePassword: string
   kindlePort: string
   kindleRefreshInterval: string

@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
 import { app, safeStorage } from 'electron'
-import type { DashboardConfig, LanguagePreference } from '../shared/types'
+import type { DashboardConfig, KindleMode, LanguagePreference } from '../shared/types'
 import { positiveInt } from './constants'
 import { applyLanguagePreference, normalizeLanguagePreference, text } from './i18n'
 import { configPath, defaultDashboardUrl } from './paths'
@@ -11,6 +11,7 @@ export interface StoredDashboardConfig {
   language: LanguagePreference
   kindleFullRefreshEvery: number
   kindleIp: string
+  kindleMode: KindleMode
   kindlePasswordEncoding?: 'plain' | 'safeStorage'
   kindlePasswordEncrypted?: string
   kindlePasswordPlain?: string
@@ -32,6 +33,10 @@ function normalizePipScale(raw: unknown): number {
   return PIP_SCALES.includes(value) ? value : DEFAULT_PIP_SCALE
 }
 
+function normalizeKindleMode(raw: unknown): KindleMode {
+  return raw === 'screensaver' ? 'screensaver' : 'loop'
+}
+
 let dashboardConfig: StoredDashboardConfig | null = null
 
 export function currentConfig(): StoredDashboardConfig | null {
@@ -44,6 +49,7 @@ function defaultStoredConfig(): StoredDashboardConfig {
     language: 'system',
     kindleFullRefreshEvery: 20,
     kindleIp: '',
+    kindleMode: 'loop',
     kindlePort: 22,
     kindleRefreshInterval: 45,
     kindleUser: '',
@@ -86,6 +92,7 @@ export function publicConfig(config: StoredDashboardConfig): DashboardConfig {
     dashboardUrl: config.dashboardUrl,
     kindleFullRefreshEvery: config.kindleFullRefreshEvery,
     kindleIp: config.kindleIp,
+    kindleMode: config.kindleMode,
     kindlePasswordSaved: hasSavedPassword(config),
     kindlePort: config.kindlePort,
     kindleRefreshInterval: config.kindleRefreshInterval,
@@ -110,6 +117,7 @@ export async function loadConfig(): Promise<StoredDashboardConfig> {
       language: normalizeLanguagePreference(raw.language),
       kindleFullRefreshEvery: positiveInt(String(raw.kindleFullRefreshEvery ?? ''), defaults.kindleFullRefreshEvery),
       kindleIp: typeof raw.kindleIp === 'string' ? raw.kindleIp : defaults.kindleIp,
+      kindleMode: normalizeKindleMode(raw.kindleMode),
       kindlePasswordEncoding: raw.kindlePasswordEncoding,
       kindlePasswordEncrypted: typeof raw.kindlePasswordEncrypted === 'string' ? raw.kindlePasswordEncrypted : undefined,
       kindlePasswordPlain: typeof raw.kindlePasswordPlain === 'string' ? raw.kindlePasswordPlain : undefined,
@@ -173,6 +181,7 @@ export async function saveConfig(raw: unknown): Promise<DashboardConfig> {
     dashboardUrl: normalizedDashboardUrl(requiredString(input, 'dashboardUrl', 500)),
     kindleFullRefreshEvery: numberField(input, 'kindleFullRefreshEvery', previous.kindleFullRefreshEvery, 1000),
     kindleIp: requiredString(input, 'kindleIp', 255),
+    kindleMode: normalizeKindleMode(input.kindleMode),
     kindlePort: numberField(input, 'kindlePort', previous.kindlePort),
     kindleRefreshInterval: numberField(input, 'kindleRefreshInterval', previous.kindleRefreshInterval, 86400),
     kindleUser: requiredString(input, 'kindleUser', 64),

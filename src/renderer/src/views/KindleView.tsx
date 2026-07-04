@@ -148,6 +148,15 @@ export function KindleView({
             </label>
           </div>
 
+          <label className="wide-field">
+            <span>{t('fieldKindleMode')}</span>
+            <select value={form?.kindleMode ?? 'loop'} onChange={(event) => onUpdateForm('kindleMode', event.target.value)}>
+              <option value="loop">{t('kindleModeLoop')}</option>
+              <option value="screensaver">{t('kindleModeScreensaver')}</option>
+            </select>
+            <small className="field-note">{t('kindleModeNote')}</small>
+          </label>
+
           <div className="button-row">
             <ActionButton type="submit" icon="save" disabled={saving}>{saving ? t('saving') : t('save')}</ActionButton>
           </div>

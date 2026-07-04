@@ -1,11 +1,10 @@
 #!/bin/sh
-# Starts the dashboard loop after the Kindle framework and Wi-Fi are ready.
+# Starts the dashboard script after the Kindle framework and Wi-Fi are ready.
 # This file stays on /mnt/us; the Upstart job only delegates to it.
+# MODE (from the env file) picks the script: loop (default) or screensaver.
 
-LOOP=/mnt/us/dash-loop.sh
 PIDFILE=/mnt/us/dash-loop.pid
 LOG=/mnt/us/dash-autostart.log
-LOOP_LOG=/mnt/us/dash-loop.log
 ENV_FILE=/mnt/us/dash-autostart.env
 DISABLED=/mnt/us/dash-autostart.disabled
 
@@ -28,6 +27,7 @@ INTERVAL="${INTERVAL:-45}"
 FULL_EVERY="${FULL_EVERY:-20}"
 WIFI_RETRY_EVERY="${WIFI_RETRY_EVERY:-3}"
 MAX_FAILURES="${MAX_FAILURES:-6}"
+MODE="${MODE:-loop}"
 export PC INTERVAL FULL_EVERY WIFI_RETRY_EVERY MAX_FAILURES
 
 if [ -z "$PC" ]; then
@@ -35,14 +35,26 @@ if [ -z "$PC" ]; then
   exit 2
 fi
 
+case "$MODE" in
+  screensaver)
+    SCRIPT=/mnt/us/dash-screensaver.sh
+    SCRIPT_LOG=/mnt/us/dash-screensaver.log
+    ;;
+  *)
+    MODE=loop
+    SCRIPT=/mnt/us/dash-loop.sh
+    SCRIPT_LOG=/mnt/us/dash-loop.log
+    ;;
+esac
+
 remaining=60
-while [ ! -f "$LOOP" ] && [ "$remaining" -gt 0 ]; do
+while [ ! -f "$SCRIPT" ] && [ "$remaining" -gt 0 ]; do
   sleep 2
   remaining=$((remaining - 2))
 done
 
-if [ ! -f "$LOOP" ]; then
-  log "missing $LOOP after waiting 60s"
+if [ ! -f "$SCRIPT" ]; then
+  log "missing $SCRIPT after waiting 60s"
   exit 1
 fi
 
@@ -55,15 +67,15 @@ while [ "$remaining" -gt 0 ]; do
 done
 
 rm -f /mnt/us/dash-loop.stop
-log "starting loop (wifi=${STATE:-unknown}, PC=$PC)"
-setsid sh "$LOOP" </dev/null >> "$LOOP_LOG" 2>&1 &
+log "starting $MODE (wifi=${STATE:-unknown}, PC=$PC)"
+setsid sh "$SCRIPT" </dev/null >> "$SCRIPT_LOG" 2>&1 &
 sleep 2
 
 PID=$(cat "$PIDFILE" 2>/dev/null)
 if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
-  log "loop running pid=$PID"
+  log "$MODE running pid=$PID"
   exit 0
 fi
 
-log "loop failed to start"
+log "$MODE failed to start"
 exit 1
