@@ -14,6 +14,9 @@ prepared, with SSH and FBInk working.
 
 - AI usage dashboard for Claude Code and OpenAI Codex.
 - Atomic PNG render optimized for e-ink screens.
+- Two display modes: continuous loop (dedicated display) or screensaver mode,
+  which shows the dashboard only while the Kindle is locked and keeps reading
+  untouched.
 - Local server with `/dash.png`, `/render`, `/api/ping`, `/api/auth`, and `/api/usage`.
 - Kindle setup through the UI: IP, SSH port, SSH user, password, PNG URL, and intervals.
 - Remote diagnostics for SSH, jailbreak, FBInk, hotfix, and installed scripts.
@@ -22,6 +25,8 @@ prepared, with SSH and FBInk working.
 - Always-on-top desktop `Picture-in-Picture` window with configurable scale.
 - Multilingual desktop UI and rendered PNG.
 - Current languages: `pt-BR`, `en`, and `es`, with fallback to `en`.
+- Phone viewer at `/mobile` (alias `/iphone`): any phone browser on the same
+  network shows the dashboard with auto-refresh, no jailbreak required.
 
 ## Screenshots
 
@@ -92,6 +97,7 @@ Open **Kindle > Configuration** and fill in:
 | Kindle Download | Interval, in seconds, between PNG downloads |
 | Full Refresh | How many cycles between full Kindle refreshes |
 | Wi-Fi Retry | How many consecutive failures before Wi-Fi recovery |
+| Display Mode | `Continuous loop` (screen always on) or `Screensaver` (dashboard only while locked) |
 
 Then:
 
@@ -117,6 +123,20 @@ own, including after reboot.
 To remove Kindle automation, use **Uninstall** in
 **Kindle > Diagnostics and Installation**. Manual guide:
 [KINDLE-INSTALLATION.md](KINDLE-INSTALLATION.md).
+
+### Viewing on a phone (iPhone or Android)
+
+With the app running, open in the phone browser on the same Wi-Fi network:
+
+```text
+http://<IP_DO_PC>:8787/mobile
+```
+
+The page shows the same rendered PNG, un-rotated for the phone screen, and
+reloads it automatically (default every 60s, adjustable with `?refresh=30`).
+On iOS, use **Share > Add to Home Screen** for a fullscreen app-like view. The
+page requests a screen wake lock where supported (iOS 16.4+); on older devices
+disable auto-lock in Settings while using it.
 
 ## Multilingual Support
 
@@ -230,5 +250,6 @@ npm run build
 
 - Change history: [CHANGELOG.md](CHANGELOG.md)
 - Kindle installation: [KINDLE-INSTALLATION.md](KINDLE-INSTALLATION.md)
+- Raspberry Pi / headless Linux: [PI-SETUP.md](PI-SETUP.md)
 - Translations: [locales/README.md](locales/README.md)
 - Releases: [GitHub Releases](https://github.com/alexishida/kindle-dashboard/releases)

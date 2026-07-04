@@ -1,0 +1,7 @@
+[Unit]
+Description=Codex usage snapshot refresh (writes a fresh rollout with account rate limits)
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/opt/node/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh -c 'codex exec --skip-git-repo-check -s read-only "responda apenas: ok"'

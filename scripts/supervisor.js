@@ -13,6 +13,7 @@ const BACKEND_LOG = path.join(OUT, 'backend.log');
 const IMAGE = path.join(OUT, 'dash.png');
 const PORT = positiveInt(process.env.PORT, 8787);
 const INTERVAL_MS = positiveInt(process.env.RENDER_INTERVAL, 60) * 1000;
+const RENDER_LANG = (process.env.RENDER_LANG || '').trim();
 const RESTART_MS = positiveInt(process.env.BACKEND_RESTART_DELAY, 5) * 1000;
 const CHROME = findChrome();
 
@@ -27,14 +28,32 @@ function positiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function playwrightChromeCandidates() {
+  const root = path.join(require('os').homedir(), '.cache', 'ms-playwright');
+  const out = [];
+  try {
+    for (const dir of fs.readdirSync(root)) {
+      if (!dir.startsWith('chromium')) continue;
+      out.push(path.join(root, dir, 'chrome-linux', 'headless_shell'));
+      out.push(path.join(root, dir, 'chrome-linux', 'chrome'));
+    }
+  } catch { /* sem cache do Playwright */ }
+  return out;
+}
+
 function findChrome() {
   const candidates = [
     process.env.CHROME,
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    ...playwrightChromeCandidates(),
   ].filter(Boolean);
   const found = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!found) throw new Error('Chrome not found; set CHROME to chrome.exe');
+  if (!found) throw new Error('Chrome not found; set CHROME to a Chrome/Chromium binary');
   return found;
 }
 
@@ -130,7 +149,7 @@ async function render() {
       '--window-size=1072,1448',
       '--virtual-time-budget=5000',
       `--screenshot=${tempImage}`,
-      `http://127.0.0.1:${PORT}/render`,
+      `http://127.0.0.1:${PORT}/render${RENDER_LANG ? `?lang=${encodeURIComponent(RENDER_LANG)}` : ''}`,
     ]);
 
     if (!result.ok) {

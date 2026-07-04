@@ -67,6 +67,8 @@ Sensitive data stays out of the renderer. The SSH password saved by the app live
 - `GET /api/usage` entrega dados normalizados.
 - `GET /render` entrega a tela usada para captura.
 - `GET /dash.png` entrega o PNG final.
+- `GET /mobile` (alias `/iphone`) entrega pagina de visualizacao para celular,
+  que exibe o `dash.png` com auto-refresh e desfaz a rotacao de captura.
 - `GET /kindle/*` serve apenas arquivos dentro de `kindle/`.
 - Preservar render atomico: escrever temporario e substituir o PNG final apenas
   depois da captura completa.

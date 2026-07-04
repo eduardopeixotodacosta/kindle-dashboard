@@ -1,0 +1,14 @@
+[Unit]
+Description=Kindle Dashboard (backend + PNG render via Chrome headless)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/kindle-dashboard
+Environment=PATH=%h/opt/node/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=RENDER_LANG=pt-BR
+ExecStart=%h/opt/node/bin/node scripts/supervisor.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
