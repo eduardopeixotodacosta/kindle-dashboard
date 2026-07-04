@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kindle Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  * { margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; background: #fff; overflow: hidden; }
+  #dash {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+  }
+</style>
+</head>
+<body>
+<img id="dash" alt="dashboard">
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var refreshSeconds = Math.max(5, Number(params.get('refresh')) || 60);
+    var img = document.getElementById('dash');
+
+    // rotate(-90deg) desfaz a rotacao de captura do Kindle, entao os eixos
+    // visuais ficam trocados em relacao ao tamanho natural do PNG.
+    function fit() {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      var scale = Math.min(
+        window.innerWidth / img.naturalHeight,
+        window.innerHeight / img.naturalWidth
+      );
+      img.style.width = img.naturalWidth * scale + 'px';
+      img.style.height = img.naturalHeight * scale + 'px';
+    }
+
+    var retryTimer = null;
+    function load() {
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      var next = new Image();
+      next.onload = function () {
+        img.src = next.src;
+        fit();
+      };
+      next.onerror = function () { retryTimer = setTimeout(load, 5000); };
+      next.src = '/dash.png?t=' + Date.now();
+    }
+
+    function requestWakeLock() {
+      if (!('wakeLock' in navigator)) return;
+      navigator.wakeLock.request('screen').catch(function () {});
+    }
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+        load();
+      }
+    });
+    window.addEventListener('resize', fit);
+    window.addEventListener('orientationchange', function () { setTimeout(fit, 250); });
+
+    requestWakeLock();
+    load();
+    setInterval(load, refreshSeconds * 1000);
+  })();
+</script>
+</body>
+</html>

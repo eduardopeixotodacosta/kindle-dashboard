@@ -4,6 +4,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const CREDS = path.join(os.homedir(), '.claude', '.credentials.json');
 const URL = 'https://api.anthropic.com/api/oauth/usage';
@@ -15,7 +16,16 @@ let cache = { at: 0, data: null };
 let lastAttempt = 0; // gate: nunca bate no endpoint mais de 1x/MIN_INTERVAL (mesmo em erro → evita 429)
 
 function readToken() {
-  const c = JSON.parse(fs.readFileSync(CREDS, 'utf8'));
+  let c;
+  try {
+    c = JSON.parse(fs.readFileSync(CREDS, 'utf8'));
+  } catch (error) {
+    // macOS: a CLI guarda as credenciais no Keychain, nao em arquivo.
+    if (process.platform !== 'darwin') throw error;
+    c = JSON.parse(execFileSync('security',
+      ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+      { encoding: 'utf8', timeout: 5000 }));
+  }
   if (!c.claudeAiOauth || !c.claudeAiOauth.accessToken) throw new Error('sem accessToken');
   return c.claudeAiOauth.accessToken;
 }

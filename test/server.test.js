@@ -78,7 +78,21 @@ test('GET /kindle/dash-autostart.sh serves the Kindle launcher', async () => {
   const body = await response.text();
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /^text\/plain/);
-  assert.match(body, /Starts the dashboard loop/);
+  assert.match(body, /Starts the dashboard script/);
+});
+
+test('GET /mobile serves the phone viewer page', async () => {
+  const response = await fetch(`${baseUrl}/mobile`);
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/html/);
+  assert.match(body, /dash\.png/);
+});
+
+test('GET /iphone is an alias of the phone viewer page', async () => {
+  const response = await fetch(`${baseUrl}/iphone`);
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /dash\.png/);
 });
 
 test('GET /dash.png serves the runtime image path provided by Electron', async () => {

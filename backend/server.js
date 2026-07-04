@@ -115,6 +115,10 @@ function createServer(deps = {}) {
       return fs.readFile(path.join(__dirname, '..', 'render', 'dashboard.html'), (error, data) =>
         error ? send(res, 404, 'no render') : send(res, 200, data, { 'Content-Type': MIME['.html'] }));
     }
+    if (url === '/mobile' || url === '/iphone') {
+      return fs.readFile(path.join(__dirname, '..', 'render', 'mobile.html'), (error, data) =>
+        error ? send(res, 404, 'no mobile') : send(res, 200, data, { 'Content-Type': MIME['.html'] }));
+    }
     if (url === '/dash.png') {
       return fs.readFile(dashImagePath, (error, data) =>
         error ? send(res, 404, 'no png') : send(res, 200, data, { 'Content-Type': MIME['.png'] }));
