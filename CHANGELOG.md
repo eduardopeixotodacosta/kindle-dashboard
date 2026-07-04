@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## [v1.0.7](https://github.com/alexishida/kindle-dashboard/releases/latest) - 2026-07-04
+
+Kindle Dashboard v1.0.7
+
+### Added
+
+- Screensaver display mode: the Kindle shows the dashboard only while locked and gives the screen back on unlock, so reading stays untouched (`kindle/dash-screensaver.sh`, selectable in the UI).
+- Phone viewer at `GET /mobile` (alias `/iphone`): any phone browser on the LAN shows the rendered PNG un-rotated and scaled to the screen, with auto-refresh (`?refresh=N`) and screen wake lock where supported.
+- Headless Raspberry Pi / Linux setup for the standalone supervisor: Chrome/Chromium autodetection on Linux and macOS (including the Playwright headless shell), `RENDER_LANG` to pick the PNG language, systemd user units with Codex/Claude usage-refresh timers, documented in `PI-SETUP.md`.
+- Claude collector falls back to the macOS Keychain when `~/.claude/.credentials.json` does not exist.
+
+### Tests
+
+- Added server coverage for the `/mobile` and `/iphone` routes.
+
+### Version
+
+- App version bumped to `1.0.7`.
+
 ## [v1.0.6](https://github.com/alexishida/kindle-dashboard/releases/latest) - 2026-07-01
 
 Kindle Dashboard v1.0.6
