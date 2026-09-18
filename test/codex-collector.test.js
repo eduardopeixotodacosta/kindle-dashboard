@@ -24,6 +24,7 @@ function tokenCountEvent(totalTokens, primaryResetSeconds, secondaryResetSeconds
         total_token_usage: { total_tokens: totalTokens },
       },
       rate_limits: {
+        ...(options.planType ? { plan_type: options.planType } : {}),
         primary: primaryResetSeconds
           ? {
               used_percent: usedPercent,
@@ -256,6 +257,147 @@ test('codex collector marks stale data with a translation key, not raw text', as
     assert.equal(result.confidence, 'stale');
     assert.equal(result.noteKey, 'codexStale');
     assert.equal(result.note, undefined);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('codex collector labels a monthly window by its length instead of five hours', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kindle-dashboard-codex-'));
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  try {
+    // plano sem janela de 5h: so "primary" com 43200 min (30 dias)
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '17', 'rollout-current.jsonl'), [
+      tokenCountEvent(12024, nowSeconds + 86400 * 29, null, 31, { primaryWindowMinutes: 43200 }),
+    ]);
+
+    const collector = loadCollectorForHome(homeDir);
+    const result = await collector.collect();
+
+    assert.equal(result.confidence, 'live');
+    assert.deepEqual(result.windows, [
+      { name: '30d', pct: 31, resets_at: new Date((nowSeconds + 86400 * 29) * 1000).toISOString() },
+    ]);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('codex collector ignores windows from a previous plan when the newest snapshot changed plan', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kindle-dashboard-codex-'));
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  try {
+    // assinatura plus encerrada: 5h expirada, 7d ainda com reset futuro
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '16', 'rollout-plus.jsonl'), [
+      timestampedEvent(nowSeconds - 7200, tokenCountEvent(90000, nowSeconds - 3600, nowSeconds + 86400, 40,
+        { planType: 'plus', secondaryUsedPercent: 5 })),
+    ]);
+    // plano free: so janela de 30 dias
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '17', 'rollout-free.jsonl'), [
+      timestampedEvent(nowSeconds - 60, tokenCountEvent(12024, nowSeconds + 86400 * 29, null, 31,
+        { planType: 'free', primaryWindowMinutes: 43200 })),
+    ]);
+
+    const collector = loadCollectorForHome(homeDir);
+    const result = await collector.collect();
+
+    assert.equal(result.confidence, 'live');
+    assert.deepEqual(result.windows, [
+      { name: '30d', pct: 31, resets_at: new Date((nowSeconds + 86400 * 29) * 1000).toISOString() },
+    ]);
+    assert.deepEqual(result.tokens, { total: 12024 });
+    assert.equal(result.noteKey, undefined);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('codex collector keeps only the weekly window for a weekly-only plan even if an older five hour window is live', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kindle-dashboard-codex-'));
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  try {
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '16', 'rollout-plus.jsonl'), [
+      timestampedEvent(nowSeconds - 600, tokenCountEvent(90000, nowSeconds + 3000, nowSeconds + 86400, 40,
+        { planType: 'plus' })),
+    ]);
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '17', 'rollout-prolite.jsonl'), [
+      timestampedEvent(nowSeconds - 60, tokenCountEvent(12596, nowSeconds + 86400 * 3, null, 73,
+        { planType: 'prolite', primaryWindowMinutes: 10080 })),
+    ]);
+
+    const collector = loadCollectorForHome(homeDir);
+    const result = await collector.collect();
+
+    assert.equal(result.confidence, 'live');
+    assert.deepEqual(result.windows, [
+      { name: '7d', pct: 73, resets_at: new Date((nowSeconds + 86400 * 3) * 1000).toISOString() },
+    ]);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('codex collector still completes an incomplete snapshot from an older event of the same plan', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kindle-dashboard-codex-'));
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  try {
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '16', 'rollout-older.jsonl'), [
+      timestampedEvent(nowSeconds - 600, tokenCountEvent(90000, nowSeconds + 3000, nowSeconds + 86400, 40,
+        { planType: 'plus', secondaryUsedPercent: 9 })),
+    ]);
+    // snapshot sem a chave secondary (nao e "secondary: null"): incompleto
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '17', 'rollout-newer.jsonl'), [
+      timestampedEvent(nowSeconds - 60, {
+        payload: {
+          type: 'token_count',
+          info: { total_token_usage: { total_tokens: 100000 } },
+          rate_limits: {
+            plan_type: 'plus',
+            primary: { used_percent: 17, window_minutes: 300, resets_at: nowSeconds + 3600 },
+          },
+        },
+      }),
+    ]);
+
+    const collector = loadCollectorForHome(homeDir);
+    const result = await collector.collect();
+
+    assert.equal(result.confidence, 'live');
+    assert.deepEqual(result.windows, [
+      { name: '5h', pct: 17, resets_at: new Date((nowSeconds + 3600) * 1000).toISOString() },
+      { name: '7d', pct: 9, resets_at: new Date((nowSeconds + 86400) * 1000).toISOString() },
+    ]);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('codex collector labels windows given in seconds and rounds odd sizes', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kindle-dashboard-codex-'));
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  try {
+    writeRollout(homeDir, path.join('sessions', '2026', '09', '17', 'rollout-current.jsonl'), [
+      {
+        payload: {
+          type: 'token_count',
+          info: { total_token_usage: { total_tokens: 10 } },
+          rate_limits: {
+            primary: { used_percent: 3, window_seconds: 18000, resets_at: nowSeconds + 3600 },
+            secondary: { used_percent: 4, window_minutes: 90, resets_at: nowSeconds + 7200 },
+          },
+        },
+      },
+    ]);
+
+    const collector = loadCollectorForHome(homeDir);
+    const result = await collector.collect();
+
+    assert.deepEqual(result.windows.map((window) => window.name), ['5h', '90m']);
   } finally {
     fs.rmSync(homeDir, { recursive: true, force: true });
   }

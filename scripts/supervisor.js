@@ -13,6 +13,7 @@ const BACKEND_LOG = path.join(OUT, 'backend.log');
 const IMAGE = path.join(OUT, 'dash.png');
 const PORT = positiveInt(process.env.PORT, 8787);
 const INTERVAL_MS = positiveInt(process.env.RENDER_INTERVAL, 60) * 1000;
+const RENDER_TIMEOUT_MS = positiveInt(process.env.RENDER_TIMEOUT, 30) * 1000;
 const RENDER_LANG = (process.env.RENDER_LANG || '').trim();
 const RESTART_MS = positiveInt(process.env.BACKEND_RESTART_DELAY, 5) * 1000;
 const CHROME = findChrome();
@@ -125,8 +126,29 @@ function runChrome(args) {
       stdio: 'ignore',
       windowsHide: true,
     });
-    child.once('error', (error) => resolve({ ok: false, error }));
-    child.once('exit', (code) => resolve({ ok: code === 0, code }));
+    let settled = false;
+    let exited = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      // SIGKILL guarda pelo exit real do processo, nao pelo settle da promise:
+      // finish() abaixo ja marca settled antes dos 2s.
+      setTimeout(() => {
+        if (!exited) child.kill('SIGKILL');
+      }, 2000).unref();
+      finish({ ok: false, timeout: true });
+    }, RENDER_TIMEOUT_MS);
+    timer.unref();
+    child.once('error', (error) => finish({ ok: false, error }));
+    child.once('exit', (code, signal) => {
+      exited = true;
+      finish({ ok: code === 0, code, signal });
+    });
   });
 }
 
@@ -153,7 +175,7 @@ async function render() {
     ]);
 
     if (!result.ok) {
-      log(`render failed: ${result.error ? result.error.message : `chrome exit ${result.code}`}`);
+      log(`render failed: ${result.timeout ? `chrome timeout after ${RENDER_TIMEOUT_MS / 1000}s` : result.error ? result.error.message : `chrome exit ${result.code}${result.signal ? ` signal ${result.signal}` : ''}`}`);
       return;
     }
 

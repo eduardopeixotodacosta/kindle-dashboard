@@ -111,3 +111,72 @@ test('claude collector marks cached limits stale after all windows expire', asyn
     fs.rmSync(homeDir, { recursive: true, force: true });
   }
 });
+
+test('claude collector flags cached limits stale with a note when the token disappears', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kindle-dashboard-claude-'));
+  const startMs = Date.parse('2026-06-30T04:00:00.000Z');
+  let nowMs = startMs;
+
+  try {
+    writeCredentials(homeDir);
+    Date.now = () => nowMs;
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => usagePayload(startMs, 5 * 60 * 60 * 1000, 7 * 24 * 60 * 60 * 1000),
+    });
+
+    const collector = loadCollectorForHome(homeDir);
+    await collector.collect();
+
+    // CLI deslogou: arquivo continua, mas sem accessToken
+    fs.writeFileSync(
+      path.join(homeDir, '.claude', '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: '', refreshToken: '', expiresAt: 0 } }),
+    );
+    nowMs = startMs + 181_000;
+    const stale = await collector.collect();
+    assert.equal(stale.confidence, 'stale');
+    assert.deepEqual(stale.windows.map((window) => window.name), ['5h', '7d']);
+    assert.equal(stale.noteKey, 'claudeStale');
+    assert.equal(stale.staleSince, new Date(startMs).toISOString());
+    assert.equal(stale.error, 'sem accessToken');
+
+    // cooldown: ainda sem nova tentativa, mas continua honesto
+    nowMs = startMs + 200_000;
+    const cooldown = await collector.collect();
+    assert.equal(cooldown.confidence, 'stale');
+    assert.equal(cooldown.noteKey, 'claudeStale');
+    assert.equal(cooldown.staleSince, new Date(startMs).toISOString());
+    assert.equal(cooldown.error, 'sem accessToken');
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('claude collector keeps the original failure visible during a cold-start cooldown', async () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kindle-dashboard-claude-'));
+  const startMs = Date.parse('2026-06-30T04:00:00.000Z');
+  let nowMs = startMs;
+
+  try {
+    fs.mkdirSync(path.join(homeDir, '.claude'), { recursive: true });
+    fs.writeFileSync(
+      path.join(homeDir, '.claude', '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: '' } }),
+    );
+    Date.now = () => nowMs;
+    global.fetch = async () => { throw new Error('fetch must not run without a token'); };
+
+    const collector = loadCollectorForHome(homeDir);
+    const first = await collector.collect();
+    assert.equal(first.confidence, 'error');
+    assert.equal(first.error, 'sem accessToken');
+
+    nowMs = startMs + 60_000;
+    const cooldown = await collector.collect();
+    assert.equal(cooldown.confidence, 'cooldown');
+    assert.match(cooldown.error, /sem accessToken/);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
+});

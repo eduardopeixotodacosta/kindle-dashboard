@@ -14,6 +14,7 @@ const STALE_NOTE_KEY = 'claudeStale';
 
 let cache = { at: 0, data: null };
 let lastAttempt = 0; // gate: nunca bate no endpoint mais de 1x/MIN_INTERVAL (mesmo em erro → evita 429)
+let lastError = null; // motivo da ultima falha, repetido durante o cooldown
 
 function readToken() {
   let c;
@@ -70,6 +71,19 @@ function withoutExpiredWindows(tool, now = Date.now()) {
   return next;
 }
 
+// Cache servido apos falha (token ausente, rede, 4xx) e sempre marcado como desatualizado,
+// com a nota visivel no PNG: barra congelada sem aviso viraria metrica "atual".
+function staleFromCache(now, error) {
+  const next = {
+    ...cache.data,
+    confidence: 'stale',
+    staleSince: new Date(cache.at).toISOString(),
+    noteKey: STALE_NOTE_KEY,
+  };
+  if (error) next.error = error;
+  return withoutExpiredWindows(next, now);
+}
+
 async function collect() {
   const now = Date.now();
   if (cache.data && now - cache.at < MIN_INTERVAL) {
@@ -77,9 +91,10 @@ async function collect() {
   }
   // gate de segurança: não repetir a chamada real antes de MIN_INTERVAL, nem em erro
   if (now - lastAttempt < MIN_INTERVAL) {
-    if (cache.data) return withoutExpiredWindows({ ...cache.data, confidence: 'stale' }, now);
+    if (cache.data) return staleFromCache(now, lastError);
     return { tool: 'claude', label: 'Claude Code', windows: [], confidence: 'cooldown',
-             error: 'aguardando intervalo (≥180s) antes de tentar de novo' };
+             error: 'aguardando intervalo (≥180s) antes de tentar de novo'
+               + (lastError ? ` (última falha: ${lastError})` : '') };
   }
   lastAttempt = now;
   try {
@@ -95,9 +110,11 @@ async function collect() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = withoutExpiredWindows(shape(await res.json()), now);
     cache = { at: now, data };
+    lastError = null;
     return data;
   } catch (e) {
-    if (cache.data) return withoutExpiredWindows({ ...cache.data, confidence: 'stale', error: String(e.message || e) }, now);
+    lastError = String(e.message || e);
+    if (cache.data) return staleFromCache(now, lastError);
     return { tool: 'claude', label: 'Claude Code', windows: [], confidence: 'error', error: String(e.message || e) };
   }
 }

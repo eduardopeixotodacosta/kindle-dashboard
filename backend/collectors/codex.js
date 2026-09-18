@@ -139,15 +139,20 @@ function resetMsForWindow(w) {
 }
 
 function windowName(key, w) {
-  const minutes = Number(
+  const minutes = Math.round(Number(
     w && w.window_minutes != null
       ? w.window_minutes
       : w && w.window_seconds != null
         ? w.window_seconds / 60
         : NaN
-  );
-  if (minutes === 300) return '5h';
-  if (minutes === 10080) return '7d';
+  ));
+  // Rotulo vem do tamanho real da janela (5h, 7d, 30d...). Planos sem janela de 5h
+  // (ex.: free = 43200 min) nao podem herdar "5h" so por estarem em "primary".
+  if (Number.isFinite(minutes) && minutes > 0) {
+    if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+    if (minutes % 60 === 0) return `${minutes / 60}h`;
+    return `${minutes}m`;
+  }
   if (key === 'primary') return '5h';
   if (key === 'secondary') return '7d';
   return key;
@@ -174,15 +179,40 @@ function publicWindow(w) {
   return out;
 }
 
-function orderedWindows(windowsByName) {
+function orderedWindows(windowsByName, expected = EXPECTED_WINDOWS) {
   const out = [];
-  for (const name of EXPECTED_WINDOWS) {
+  for (const name of expected) {
     if (windowsByName.has(name)) out.push(publicWindow(windowsByName.get(name)));
   }
   for (const [name, w] of windowsByName) {
-    if (!EXPECTED_WINDOWS.includes(name)) out.push(publicWindow(w));
+    if (!expected.includes(name)) out.push(publicWindow(w));
   }
   return out;
+}
+
+// Regime atual = snapshot de rate_limits mais recente: define quais janelas o plano tem
+// hoje e o plan_type. Evento de outro plano (ex.: plus antigo vs prolite/free atual) e
+// ignorado, senao uma janela 7d de assinatura encerrada apareceria como limite vigente.
+// "secondary": null e ausencia intencional; chave secondary AUSENTE e snapshot
+// incompleto -> mantem o conjunto legado (5h + 7d) e segue varrendo eventos antigos.
+function currentRegime(sortedEvents) {
+  for (const event of sortedEvents) {
+    const rl = event.tokenCount.rate_limits;
+    if (!rl || typeof rl !== 'object') continue;
+    const names = limitWindows(rl).map((w) => w.name);
+    if (!names.length) continue;
+    const incomplete = !('primary' in rl) || !('secondary' in rl);
+    const expected = incomplete ? [...new Set([...EXPECTED_WINDOWS, ...names])] : names;
+    const planType = typeof rl.plan_type === 'string' && rl.plan_type ? rl.plan_type : null;
+    return { expected, planType, observedAt: event.observedAt };
+  }
+  return { expected: EXPECTED_WINDOWS, planType: null, observedAt: Infinity };
+}
+
+function sameRegime(rateLimits, regime) {
+  if (!regime.planType || !rateLimits) return true;
+  const planType = rateLimits.plan_type;
+  return typeof planType !== 'string' || !planType || planType === regime.planType;
 }
 
 // Escolhe total de tokens mais recente + melhor janela por nome, sempre pelo evento com
@@ -196,6 +226,8 @@ function selectFromEvents(events, now) {
     || (b.line - a.line)
   );
 
+  const regime = currentRegime(events);
+  const expected = regime.expected;
   const liveWindows = new Map();
   const staleWindows = new Map();
   let totalTokens = null;
@@ -208,23 +240,25 @@ function selectFromEvents(events, now) {
       totalTokens = tc.info.total_token_usage.total_tokens;
       tokensAt = event.observedAt;
     }
+    if (!sameRegime(tc.rate_limits, regime)) continue;
     for (const w of limitWindows(tc.rate_limits)) {
+      if (!expected.includes(w.name)) continue;
       if (w.resetMs && w.resetMs > now) {
         if (!liveWindows.has(w.name)) { liveWindows.set(w.name, w); liveAt.set(w.name, event.observedAt); }
       } else if (!staleWindows.has(w.name)) {
         staleWindows.set(w.name, w);
       }
     }
-    if (totalTokens != null && EXPECTED_WINDOWS.every((name) => liveWindows.has(name))) break;
+    if (totalTokens != null && expected.every((name) => liveWindows.has(name))) break;
   }
 
-  const complete = totalTokens != null && EXPECTED_WINDOWS.every((name) => liveWindows.has(name));
+  const complete = totalTokens != null && expected.every((name) => liveWindows.has(name));
   let minWinnerAt = Infinity;
   if (complete) {
-    minWinnerAt = tokensAt;
-    for (const name of EXPECTED_WINDOWS) minWinnerAt = Math.min(minWinnerAt, liveAt.get(name));
+    minWinnerAt = Math.min(tokensAt, regime.observedAt);
+    for (const name of expected) minWinnerAt = Math.min(minWinnerAt, liveAt.get(name));
   }
-  return { liveWindows, staleWindows, totalTokens, complete, minWinnerAt };
+  return { liveWindows, staleWindows, totalTokens, complete, minWinnerAt, expected };
 }
 
 async function collect() {
@@ -253,7 +287,7 @@ async function collect() {
       if (selection.complete && nextMtime < selection.minWinnerAt) break;
     }
 
-    const { liveWindows, staleWindows, totalTokens } = selection;
+    const { liveWindows, staleWindows, totalTokens, expected } = selection;
     if (!liveWindows.size && !staleWindows.size && totalTokens == null) throw new Error('sem token_count utilizavel');
 
     const tool = { tool: 'codex', label: 'OpenAI Codex', windows: [], confidence: 'live' };
@@ -261,7 +295,7 @@ async function collect() {
 
     // Honestidade: cada janela local so vale enquanto seu reset_at ainda e futuro.
     if (liveWindows.size) {
-      tool.windows = orderedWindows(liveWindows);
+      tool.windows = orderedWindows(liveWindows, expected);
     } else if (staleWindows.size) {
       const staleSince = Math.max(...Array.from(staleWindows.values()).map((w) => w.resetMs || 0));
       tool.confidence = 'stale';

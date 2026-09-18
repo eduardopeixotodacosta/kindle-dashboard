@@ -46,8 +46,11 @@ checks `/usr/bin/chromium*`; `CHROME=<path>` overrides).
 npm install -g @openai/codex
 ```
 
-Auth: copy `~/.codex/auth.json` from a machine where Codex is logged in
-(`scp`, keep permissions `600`), or run `codex login` with port forwarding.
+Auth: log in on the Pi itself with `codex login --device-auth` (prints a URL
+and a one-time code; open the URL in any browser). Do NOT copy
+`~/.codex/auth.json` from another machine: the refresh token is single-use
+and rotating, so the first machine to refresh invalidates the other's copy
+(OpenAI docs; openai/codex issues #15410, #15502).
 
 The Codex collector reads local rollout files, so the Pi needs to run a
 session periodically for fresh account-level rate limits. The
@@ -80,7 +83,9 @@ loginctl enable-linger $USER   # start at boot without an open session (may prom
 
 `kindle-dashboard.service` sets `RENDER_LANG=pt-BR` for the PNG language;
 edit the unit to change it. Render interval: `RENDER_INTERVAL` (seconds,
-default 60). Port: `PORT` (default 8787).
+default 60). Chrome capture timeout: `RENDER_TIMEOUT` (seconds, default 30; a
+hung Chrome is killed so the next render is not blocked). Port: `PORT`
+(default 8787).
 
 ## 7. Verify
 
